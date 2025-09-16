@@ -3,6 +3,8 @@ import requests
 import os
 import time
 import threading
+from flask import Flask, request, jsonify
+import os, requests
 
 app = Flask(__name__)
 
@@ -45,3 +47,40 @@ if __name__ == "__main__":
     t = threading.Thread(target=poll_trello, daemon=True)
     t.start()
     app.run(host="0.0.0.0", port=5000)
+
+# Root check
+@app.route("/", methods=["GET"])
+def home():
+    return "Trello → ClickUp Connector Running!"
+
+# ✅ Webhook handler Trello will call
+@app.route("/trello-webhook", methods=["HEAD", "POST"])
+def trello_webhook():
+    if request.method == "HEAD":
+        # Trello sends HEAD request to verify the webhook
+        return "", 200
+
+    data = request.json
+    if data and "action" in data:
+        action = data["action"]["type"]
+        card_name = data["action"].get("data", {}).get("card", {}).get("name")
+
+        # Only trigger if card name contains "onboarding"
+        if action == "createCard" and card_name and "onboarding" in card_name.lower():
+            clickup_task = {
+                "name": card_name,
+                "status": "to do"
+            }
+            headers = {
+                "Authorization": os.environ["CLICKUP_API_KEY"],
+                "Content-Type": "application/json"
+            }
+            list_id = os.environ["CLICKUP_ONBOARDING_LIST_ID"]
+            resp = requests.post(
+                f"https://api.clickup.com/api/v2/list/{list_id}/task",
+                headers=headers,
+                json=clickup_task
+            )
+            print("ClickUp response:", resp.status_code, resp.text)
+
+    return jsonify({"status": "ok"}), 200
