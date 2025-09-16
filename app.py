@@ -41,16 +41,18 @@ def register_webhook():
 # ----------------------------
 # Webhook endpoint Trello calls
 # ----------------------------
-@app.route("/trello-webhook", methods=["HEAD", "GET", "POST"])
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route("/trello-webhook", methods=["HEAD", "POST"])
 def trello_webhook():
     if request.method == "HEAD":
-        return "", 200  # Trello uses HEAD to validate
-    # handle POST events here
-    return "", 200
-
+        return "", 200  # Trello validator expects 200 for HEAD
+    # handle incoming Trello POST events here
     data = request.json
-    if not data:
-        return jsonify({"status": "no data"}), 200
+    print("Received Trello webhook:", data)
+    return "", 200
 
     # Look at Trello action type
     action = data.get("action", {})
