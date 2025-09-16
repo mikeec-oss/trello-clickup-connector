@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: trello-clickup-sync
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: TRELLO_KEY
+        sync: false
+      - key: TRELLO_TOKEN
+        sync: false
+      - key: TRELLO_LIST_ID
+        sync: false
+      - key: CLICKUP_API_KEY
+        sync: false
+      - key: CLICKUP_ONBOARDING_LIST_ID
+        sync: false
