@@ -58,7 +58,7 @@ def trello_webhook():
 
     if action_type == "createCard" and "onboarding" in card.get("name", "").lower():
         # Send to ClickUp
-        CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY"
+        CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY")
         list_id = os.getenv("CLICKUP_ONBOARDING_LIST_ID")
 
         if not clickup_token or not list_id:
