@@ -1,82 +1,58 @@
 import os
+import json
 import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# ----------------------------
-# Health check
-# ----------------------------
+# Load environment variables
+TRELLO_KEY = os.getenv("TRELLO_KEY")
+TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
+TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
+
+CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY")
+CLICKUP_ONBOARDING_LIST_ID = os.getenv("CLICKUP_ONBOARDING_LIST_ID")
+
+# Home route
 @app.route("/", methods=["GET"])
 def home():
-    return "Trello ↔ ClickUp connector is running ✅"
+    return "Trello → ClickUp Connector is running!"
 
-
-# ----------------------------
-# Register webhook in Trello
-# ----------------------------
-@app.route("/register-webhook", methods=["GET"])
-def register_webhook():
-    key = os.getenv("TRELLO_KEY")
-    token = os.getenv("TRELLO_TOKEN")
-    board_id = os.getenv("TRELLO_BOARD_ID")
-
-    if not key or not token or not board_id:
-        return jsonify({"error": "Missing TRELLO_KEY, TRELLO_TOKEN, or TRELLO_BOARD_ID in environment"}), 400
-
-    callback_url = "https://trello-clickup-connector.onrender.com/trello-webhook"
-
-    resp = requests.post(
-        f"https://api.trello.com/1/webhooks/?key={key}&token={token}",
-        json={
-            "description": "Current Projects",
-            "callbackURL": callback_url,
-            "idModel": board_id
-        }
-    )
-
-    return (resp.text, resp.status_code)
-
-
-# ----------------------------
-# Webhook endpoint Trello calls
-# ----------------------------
-from flask import Flask, request
-
-app = Flask(__name__)
-
+# Trello webhook route
 @app.route("/trello-webhook", methods=["HEAD", "POST"])
 def trello_webhook():
     if request.method == "HEAD":
-        return "", 200  # Trello validator expects 200 for HEAD
-    # handle incoming Trello POST events here
-    data = request.json
-    print("Received Trello webhook:", data)
-    return "", 200
+        # Trello webhook verification
+        return "", 200
 
-    # Look at Trello action type
-    action = data.get("action", {})
-    action_type = action.get("type")
-    card = action.get("data", {}).get("card", {})
+    if request.method == "POST":
+        data = request.json
+        print("Webhook received:", json.dumps(data))
 
-    if action_type == "createCard" and "onboarding" in card.get("name", "").lower():
-        # Send to ClickUp
-        CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY")
-        list_id = os.getenv("CLICKUP_ONBOARDING_LIST_ID")
+        # Check if it's a card creation event
+        action = data.get("action", {})
+        if action.get("type") == "createCard":
+            card = action.get("data", {}).get("card", {})
+            card_name = card.get("name")
+            card_desc = card.get("desc", "")
 
-        if not clickup_token or not list_id:
-            return jsonify({"error": "Missing CLICKUP_TOKEN or CLICKUP_ONBOARDING_LIST_ID"}), 400
+            if card_name:
+                # Send to ClickUp
+                url = f"https://api.clickup.com/api/v2/list/{CLICKUP_ONBOARDING_LIST_ID}/task"
+                headers = {
+                    "Authorization": CLICKUP_API_KEY,
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "name": card_name,
+                    "description": card_desc
+                }
 
-        resp = requests.post(
-            f"https://api.clickup.com/api/v2/list/{list_id}/task",
-            headers={"Authorization": clickup_api_key, "Content-Type": "application/json"},
-            json={"name": card["name"], "status": "to do"}
-        )
+                response = requests.post(url, headers=headers, json=payload)
+                print("ClickUp API response:", response.status_code, response.text)
 
-        return jsonify({"trello": card, "clickup_response": resp.json()}), resp.status_code
-
-    return jsonify({"status": "ignored"}), 200
-
+        return jsonify({"status": "ok"}), 200
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
