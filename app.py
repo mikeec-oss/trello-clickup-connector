@@ -1,55 +1,47 @@
-import os
-import requests
 from flask import Flask
-from apscheduler.schedulers.background import BackgroundScheduler
+import requests
+import os
+import time
+import threading
 
 app = Flask(__name__)
 
-# 🔑 API keys & IDs from environment
+# Env variables
 TRELLO_KEY = os.getenv("TRELLO_KEY")
 TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
 TRELLO_LIST_ID = os.getenv("TRELLO_LIST_ID")
-
-CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY")
+CLICKUP_TOKEN = os.getenv("CLICKUP_TOKEN")
 CLICKUP_LIST_ID = os.getenv("CLICKUP_ONBOARDING_LIST_ID")
 
-# To remember last synced cards
-synced_cards = set()
+# Store last seen card IDs
+seen_cards = set()
 
-def sync_trello_to_clickup():
-    url = f"https://api.trello.com/1/lists/{TRELLO_LIST_ID}/cards?key={TRELLO_KEY}&token={TRELLO_TOKEN}"
-    response = requests.get(url)
-    
-    if response.status_code != 200:
-        print("❌ Trello error:", response.text)
-        return
+def poll_trello():
+    global seen_cards
+    while True:
+        url = f"https://api.trello.com/1/lists/{TRELLO_LIST_ID}/cards?key={TRELLO_KEY}&token={TRELLO_TOKEN}"
+        resp = requests.get(url)
+        if resp.status_code == 200:
+            cards = resp.json()
+            for card in cards:
+                if card["id"] not in seen_cards:
+                    seen_cards.add(card["id"])
+                    create_clickup_task(card["name"], card.get("desc", ""))
+        time.sleep(30)  # poll every 30s
 
-    cards = response.json()
-    for card in cards:
-        card_id = card["id"]
-        card_name = card["name"]
-
-        if card_id not in synced_cards:
-            # ✅ Create new ClickUp task
-            clickup_url = f"https://api.clickup.com/api/v2/list/{CLICKUP_LIST_ID}/task"
-            headers = {"Authorization": CLICKUP_API_KEY, "Content-Type": "application/json"}
-            data = {"name": card_name}
-            r = requests.post(clickup_url, headers=headers, json=data)
-
-            if r.status_code == 200:
-                print(f"✅ Synced: {card_name}")
-                synced_cards.add(card_id)
-            else:
-                print("❌ ClickUp error:", r.text)
-
-# 🔁 Schedule job every 2 minutes
-scheduler = BackgroundScheduler()
-scheduler.add_job(func=sync_trello_to_clickup, trigger="interval", minutes=2)
-scheduler.start()
+def create_clickup_task(name, description):
+    url = f"https://api.clickup.com/api/v2/list/{CLICKUP_LIST_ID}/task"
+    headers = {"Authorization": CLICKUP_TOKEN, "Content-Type": "application/json"}
+    payload = {"name": name, "description": description}
+    resp = requests.post(url, headers=headers, json=payload)
+    print("Created ClickUp task:", resp.status_code, resp.text)
 
 @app.route("/")
 def home():
-    return "Trello → ClickUp sync is running 🚀"
+    return "Trello → ClickUp sync running!", 200
 
 if __name__ == "__main__":
+    # Start polling in background
+    t = threading.Thread(target=poll_trello, daemon=True)
+    t.start()
     app.run(host="0.0.0.0", port=5000)
