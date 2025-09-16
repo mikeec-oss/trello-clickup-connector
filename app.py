@@ -29,7 +29,7 @@ def register_webhook():
     resp = requests.post(
         f"https://api.trello.com/1/webhooks/?key={key}&token={token}",
         json={
-            "description": "Onboarding cards to ClickUp",
+            "description": "Current Projects",
             "callbackURL": callback_url,
             "idModel": board_id
         }
@@ -58,7 +58,7 @@ def trello_webhook():
 
     if action_type == "createCard" and "onboarding" in card.get("name", "").lower():
         # Send to ClickUp
-        clickup_token = os.getenv("CLICKUP_TOKEN")
+        CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY"
         list_id = os.getenv("CLICKUP_ONBOARDING_LIST_ID")
 
         if not clickup_token or not list_id:
@@ -66,7 +66,7 @@ def trello_webhook():
 
         resp = requests.post(
             f"https://api.clickup.com/api/v2/list/{list_id}/task",
-            headers={"Authorization": clickup_token, "Content-Type": "application/json"},
+            headers={"Authorization": clickup_api_key, "Content-Type": "application/json"},
             json={"name": card["name"], "status": "to do"}
         )
 
