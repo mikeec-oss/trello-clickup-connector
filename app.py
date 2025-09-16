@@ -41,11 +41,12 @@ def register_webhook():
 # ----------------------------
 # Webhook endpoint Trello calls
 # ----------------------------
-@app.route("/trello-webhook", methods=["HEAD", "POST"])
+@app.route("/trello-webhook", methods=["HEAD", "GET", "POST"])
 def trello_webhook():
-    # Trello will send HEAD first to validate the webhook
     if request.method == "HEAD":
-        return "", 200
+        return "", 200  # Trello uses HEAD to validate
+    # handle POST events here
+    return "", 200
 
     data = request.json
     if not data:
