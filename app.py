@@ -1,48 +1,55 @@
-from flask import Flask, request, jsonify
-import requests, os, logging, json, hmac, hashlib, base64
+import os
+import requests
+from flask import Flask
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
+
+# 🔑 API keys & IDs from environment
+TRELLO_KEY = os.getenv("TRELLO_KEY")
+TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
+TRELLO_LIST_ID = os.getenv("TRELLO_LIST_ID")
 
 CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY")
-CLICKUP_ONBOARDING_LIST_ID = os.getenv("CLICKUP_ONBOARDING_LIST_ID")
-CLICKUP_HEADERS = {"Authorization": CLICKUP_API_KEY, "Content-Type": "application/json"}
+CLICKUP_LIST_ID = os.getenv("CLICKUP_ONBOARDING_LIST_ID")
 
-TRELLO_APP_SECRET = os.getenv("TRELLO_APP_SECRET")  # optional
+# To remember last synced cards
+synced_cards = set()
 
-@app.route("/", methods=["GET"])
-def health():
-    return "Trello → ClickUp connector alive!", 200
+def sync_trello_to_clickup():
+    url = f"https://api.trello.com/1/lists/{TRELLO_LIST_ID}/cards?key={TRELLO_KEY}&token={TRELLO_TOKEN}"
+    response = requests.get(url)
+    
+    if response.status_code != 200:
+        print("❌ Trello error:", response.text)
+        return
 
-@app.route("/trello-webhook", methods=["HEAD", "POST"])
-def trello_webhook():
-    if request.method == "HEAD":
-        return "", 200
+    cards = response.json()
+    for card in cards:
+        card_id = card["id"]
+        card_name = card["name"]
 
-    payload = request.get_json(force=True, silent=True) or {}
-    app.logger.info("Trello payload: %s", json.dumps(payload)[:1000])
+        if card_id not in synced_cards:
+            # ✅ Create new ClickUp task
+            clickup_url = f"https://api.clickup.com/api/v2/list/{CLICKUP_LIST_ID}/task"
+            headers = {"Authorization": CLICKUP_API_KEY, "Content-Type": "application/json"}
+            data = {"name": card_name}
+            r = requests.post(clickup_url, headers=headers, json=data)
 
-    if TRELLO_APP_SECRET:
-        header = request.headers.get("x-trello-webhook")
-        raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-        signed = hmac.new(
-            TRELLO_APP_SECRET.encode("utf-8"),
-            (raw_body + request.url).encode("utf-8"),
-            hashlib.sha1
-        ).digest()
-        expected = base64.b64encode(signed).decode()
-        if not header or not hmac.compare_digest(expected, header):
-            return jsonify({"error": "bad signature"}), 403
+            if r.status_code == 200:
+                print(f"✅ Synced: {card_name}")
+                synced_cards.add(card_id)
+            else:
+                print("❌ ClickUp error:", r.text)
 
-    action = payload.get("action", {})
-    if action.get("type") == "createCard":
-        card = action.get("data", {}).get("card", {})
-        task_payload = {"name": card.get("name", "Trello Card"), "content": card.get("desc", "")}
-        url = f"https://api.clickup.com/api/v2/list/{CLICKUP_ONBOARDING_LIST_ID}/task"
-        r = requests.post(url, headers=CLICKUP_HEADERS, json=task_payload, timeout=15)
-        return jsonify(r.json()), r.status_code
+# 🔁 Schedule job every 2 minutes
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=sync_trello_to_clickup, trigger="interval", minutes=2)
+scheduler.start()
 
-    return jsonify({"ignored": True}), 200
+@app.route("/")
+def home():
+    return "Trello → ClickUp sync is running 🚀"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
