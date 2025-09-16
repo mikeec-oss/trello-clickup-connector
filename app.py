@@ -84,3 +84,20 @@ def trello_webhook():
             print("ClickUp response:", resp.status_code, resp.text)
 
     return jsonify({"status": "ok"}), 200
+
+@app.route("/register-webhook", methods=["GET"])
+def register_webhook():
+    import requests
+    key = os.getenv("TRELLO_KEY")
+    token = os.getenv("TRELLO_TOKEN")
+    board_id = os.getenv("TRELLO_BOARD_ID")
+    callback = "https://trello-clickup-connector.onrender.com/trello-webhook"
+    resp = requests.post(
+        f"https://api.trello.com/1/webhooks/?key={key}&token={token}",
+        json={
+            "description":"Current Projects",
+            "callbackURL": callback,
+            "idModel": board_id
+        }
+    )
+    return (resp.text, resp.status_code)
